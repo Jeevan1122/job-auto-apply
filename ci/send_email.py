@@ -19,6 +19,11 @@ from email.mime.text import MIMEText
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _clean(text: str) -> str:
+    """Replace non-breaking spaces and strip other non-ASCII noise."""
+    return (text or "").replace("\xa0", " ").replace("​", "").strip()
+
+
 def _score_bar(score: float) -> str:
     """Turn 0.0–1.0 into a coloured badge."""
     pct = int(score * 100)
@@ -65,11 +70,11 @@ def _build_html(jobs: list[dict], today: str) -> str:
             return '<tr><td colspan="5" style="color:#94A3B8;padding:12px;text-align:center;">None</td></tr>'
         rows = ""
         for j in job_list:
-            url     = j.get("url", "#")
-            company = j.get("company", "—")
-            title   = j.get("title", "—")
-            loc     = j.get("location", "—") or "—"
-            src     = j.get("source", "—")
+            url     = _clean(j.get("url", "#"))
+            company = _clean(j.get("company", "—")) or "—"
+            title   = _clean(j.get("title", "—")) or "—"
+            loc     = _clean(j.get("location", "")) or "—"
+            src     = _clean(j.get("source", "—"))
             score   = j.get("relevance_score") or 0.0
             rows += f"""
             <tr style="border-bottom:1px solid #1E2535;">
@@ -219,13 +224,13 @@ def send_digest(today: str = None) -> None:
     msg["From"]    = f"JobAgent <{gmail_user}>"
     msg["To"]      = to_email
 
-    msg.attach(MIMEText(_build_plain(jobs, today), "plain"))
-    msg.attach(MIMEText(_build_html(jobs, today),  "html"))
+    msg.attach(MIMEText(_build_plain(jobs, today), "plain", "utf-8"))
+    msg.attach(MIMEText(_build_html(jobs, today),  "html",  "utf-8"))
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(gmail_user, app_pass)
-            smtp.sendmail(gmail_user, to_email, msg.as_string())
+            smtp.send_message(msg)
         print(f"Email sent to {to_email} — {len(jobs)} jobs listed.")
     except Exception as e:
         print(f"Email failed: {e}")
