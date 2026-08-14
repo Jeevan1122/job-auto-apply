@@ -92,6 +92,7 @@ def parse_resume_with_openai(raw_text: str) -> dict:
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
         response_format={"type": "json_object"},
+        timeout=60,
     )
     return json.loads(response.choices[0].message.content)
 

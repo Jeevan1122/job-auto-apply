@@ -733,6 +733,7 @@ def _score_batch(jobs_batch: list[dict], profile: dict) -> list[dict]:
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
         response_format={"type": "json_object"},
+        timeout=60,
     )
     data = json.loads(response.choices[0].message.content)
     return data.get("results", data) if isinstance(data, dict) else data
