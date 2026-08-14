@@ -20,8 +20,21 @@ from email.message import EmailMessage
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _clean(text: str) -> str:
-    """Replace non-breaking spaces and strip other non-ASCII noise."""
-    return (text or "").replace("\xa0", " ").replace("​", "").strip()
+    """Replace non-breaking spaces, smart quotes, and strip other non-ASCII noise."""
+    if not text:
+        return ""
+    cleaned = (
+        text.replace("\xa0", " ")
+            .replace("\u200b", "")
+            .replace("\u202f", " ")
+            .replace("\u2013", "-")
+            .replace("\u2014", "-")
+            .replace("\u2018", "'")
+            .replace("\u2019", "'")
+            .replace("\u201c", '"')
+            .replace("\u201d", '"')
+    )
+    return cleaned.encode("ascii", "ignore").decode("ascii").strip()
 
 
 def _score_bar(score: float) -> str:
