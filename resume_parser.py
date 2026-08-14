@@ -11,7 +11,13 @@ from docx import Document
 
 from config import OPENAI_API_KEY, RESUME_PARSE_MODEL
 
-_client = OpenAI(api_key=OPENAI_API_KEY)
+_client: OpenAI | None = None
+
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=OPENAI_API_KEY)
+    return _client
 
 _PARSE_PROMPT = """You are a resume parsing assistant. Extract structured information from the resume text below.
 
@@ -81,7 +87,7 @@ def _extract_json(text: str) -> dict:
 
 def parse_resume_with_openai(raw_text: str) -> dict:
     prompt = _PARSE_PROMPT.format(resume_text=raw_text[:12000])
-    response = _client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=RESUME_PARSE_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
