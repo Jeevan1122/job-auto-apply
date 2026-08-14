@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+# ── Supabase ──────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
 # ── AI (Gemini — free tier) ───────────────────────────────────────────────────
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
