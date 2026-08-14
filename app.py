@@ -9,8 +9,16 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
+
+# Inject Streamlit Cloud secrets into env vars before any other imports read them
+try:
+    for _k, _v in st.secrets.items():
+        os.environ.setdefault(_k, str(_v))
+except Exception:
+    pass
+
+import pandas as pd
 
 from config import (
     UPLOADS_DIR, MIN_RELEVANCE_SCORE,
