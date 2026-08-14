@@ -8,6 +8,7 @@ Required env vars (set as GitHub Secrets):
 """
 from __future__ import annotations
 
+import email.policy
 import os
 import smtplib
 import sqlite3
@@ -218,13 +219,17 @@ def send_digest(today: str = None) -> None:
         print("No jobs found today — skipping email.")
         return
 
-    msg = EmailMessage()
+    msg = EmailMessage(policy=email.policy.SMTP)
     msg["Subject"] = f"[JobAgent] {len(jobs)} Jobs Found - {today}"
     msg["From"]    = gmail_user
     msg["To"]      = to_email
 
-    msg.set_content(_build_plain(jobs, today))
-    msg.add_alternative(_build_html(jobs, today), subtype="html")
+    # Sanitize to ASCII — plain text drops non-ASCII, HTML converts to entities
+    plain = _build_plain(jobs, today).encode("ascii", "ignore").decode("ascii")
+    html  = _build_html(jobs, today).encode("ascii", "xmlcharrefreplace").decode("ascii")
+
+    msg.set_content(plain)
+    msg.add_alternative(html, subtype="html")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
