@@ -7,9 +7,9 @@ maximising keyword match so it passes ATS and gets a human to read it.
 """
 import json
 from openai import OpenAI
-from config import OPENAI_API_KEY, TAILOR_MODEL
+from config import GEMINI_API_KEY, GEMINI_BASE_URL, TAILOR_MODEL
 
-_client = OpenAI(api_key=OPENAI_API_KEY)
+_client = OpenAI(api_key=GEMINI_API_KEY, base_url=GEMINI_BASE_URL)
 
 # ── Cover letter ───────────────────────────────────────────────────────────────
 

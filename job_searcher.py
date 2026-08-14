@@ -20,13 +20,19 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from config import (
     ADZUNA_APP_ID, ADZUNA_APP_KEY,
     JSEARCH_API_KEY,
-    OPENAI_API_KEY, RELEVANCE_SCORE_MODEL,
+    GEMINI_API_KEY, GEMINI_BASE_URL, RELEVANCE_SCORE_MODEL,
     MAX_JOBS_PER_RUN, JOB_TYPES
 )
 from database import upsert_job, update_job_score, get_jobs_for_scoring
 
 logger = logging.getLogger(__name__)
-_client = OpenAI(api_key=OPENAI_API_KEY)
+_client: OpenAI | None = None
+
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=GEMINI_API_KEY, base_url=GEMINI_BASE_URL)
+    return _client
 
 TIMEOUT = httpx.Timeout(30.0)
 HEADERS = {
@@ -488,7 +494,7 @@ def _score_batch(jobs_batch: list[dict], profile: dict) -> list[dict]:
         profile_summary=_profile_summary(profile),
         jobs_text=jobs_text,
     )
-    response = _client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=RELEVANCE_SCORE_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0,

@@ -30,12 +30,12 @@ from config import (
     WORK_AUTHORIZED, REQUIRES_SPONSORSHIP,
     SALARY_MIN, SALARY_MAX, NOTICE_PERIOD, WILLING_TO_RELOCATE,
     HEADLESS, UPLOADS_DIR,
-    OPENAI_API_KEY, COVER_LETTER_MODEL,
+    GEMINI_API_KEY, GEMINI_BASE_URL, COVER_LETTER_MODEL,
 )
 from resume_tailor import tailor_application
 
 logger = logging.getLogger(__name__)
-_ai = OpenAI(api_key=OPENAI_API_KEY)
+_ai = OpenAI(api_key=GEMINI_API_KEY, base_url=GEMINI_BASE_URL)
 
 _RESUME_PATH: Optional[str] = None
 

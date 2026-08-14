@@ -9,14 +9,14 @@ from openai import OpenAI
 from pdfminer.high_level import extract_text as pdf_extract_text
 from docx import Document
 
-from config import OPENAI_API_KEY, RESUME_PARSE_MODEL
+from config import GEMINI_API_KEY, GEMINI_BASE_URL, RESUME_PARSE_MODEL
 
 _client: OpenAI | None = None
 
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=OPENAI_API_KEY)
+        _client = OpenAI(api_key=GEMINI_API_KEY, base_url=GEMINI_BASE_URL)
     return _client
 
 _PARSE_PROMPT = """You are a resume parsing assistant. Extract structured information from the resume text below.
