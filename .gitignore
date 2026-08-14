@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+credentials.json
+ci/resume_profile_export.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Uploads (your actual resume PDFs — keep local only)
+uploads/
+
+# macOS
+.DS_Store

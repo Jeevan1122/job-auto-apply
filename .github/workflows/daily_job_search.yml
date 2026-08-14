@@ -1,0 +1,114 @@
+name: Daily Job Search
+
+on:
+  schedule:
+    # 6:00 AM CDT = 11:00 UTC (summer). Change to 12:00 UTC in winter (CST = UTC-6).
+    - cron: '0 11 * * *'
+  workflow_dispatch:   # trigger manually from the GitHub Actions tab anytime
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # needed to push the updated DB + reports back
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Python ──────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ── 3. Install (only what the pipeline needs — no Streamlit/Playwright) ─
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            "openai>=1.30.0" \
+            "httpx>=0.27.0" \
+            "python-dotenv>=1.0.0" \
+            "pdfminer.six>=20221105" \
+            "python-docx>=1.1.0" \
+            "pandas>=2.0.0" \
+            "asyncio-throttle>=1.0.2" \
+            "tenacity>=8.3.0" \
+            "openpyxl>=3.1.0" \
+            "reportlab>=4.1.0"
+
+      # ── 4. Seed resume profile into DB ─────────────────────────────────────
+      # RESUME_PROFILE_JSON secret holds the JSON exported by ci/export_resume.py
+      - name: Seed resume profile
+        env:
+          RESUME_PROFILE_JSON: ${{ secrets.RESUME_PROFILE_JSON }}
+        run: python ci/seed_resume.py
+
+      # ── 5. Run search + score pipeline ────────────────────────────────────
+      - name: Run job search
+        env:
+          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
+          CANDIDATE_NAME:       ${{ secrets.CANDIDATE_NAME }}
+          CANDIDATE_PHONE:      ${{ secrets.CANDIDATE_PHONE }}
+          CANDIDATE_LINKEDIN:   ${{ secrets.CANDIDATE_LINKEDIN }}
+          WORK_AUTHORIZED:      ${{ secrets.WORK_AUTHORIZED }}
+          REQUIRES_SPONSORSHIP: ${{ secrets.REQUIRES_SPONSORSHIP }}
+          SALARY_MIN:           ${{ secrets.SALARY_MIN }}
+          SALARY_MAX:           ${{ secrets.SALARY_MAX }}
+          NOTICE_PERIOD:        ${{ secrets.NOTICE_PERIOD }}
+          WILLING_TO_RELOCATE:  ${{ secrets.WILLING_TO_RELOCATE }}
+          MAX_JOBS_PER_RUN:     "60"
+          MIN_RELEVANCE_SCORE:  "0.65"
+          REPORTS_DIR:          "reports"
+        run: python daily_runner.py --run-now
+
+      # ── 6. Upload Excel + PDF as downloadable artifacts ───────────────────
+      - name: Upload Excel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-report-xlsx-${{ github.run_id }}
+          path: reports/job_applications_*.xlsx
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-report-pdf-${{ github.run_id }}
+          path: reports/job_applications_*.pdf
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ── 7. Send email digest ──────────────────────────────────────────────
+      - name: Send email digest
+        env:
+          GMAIL_USER:         ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL:       ${{ secrets.NOTIFY_EMAIL }}
+        run: python ci/send_email.py
+
+      # ── 8. Commit updated DB + reports back to repo ────────────────────────
+      - name: Commit and push results
+        run: |
+          git config user.name  "JobAgent Bot"
+          git config user.email "jobagent-bot@users.noreply.github.com"
+          git add jobs.db reports/
+          if git diff --staged --quiet; then
+            echo "No new jobs found today — nothing to commit."
+          else
+            COUNT=$(python -c "
+          import sqlite3, datetime
+          today = datetime.date.today().isoformat()
+          c = sqlite3.connect('jobs.db').cursor()
+          n = c.execute('SELECT COUNT(*) FROM jobs WHERE date=?',(today,)).fetchone()[0]
+          print(n)
+          " 2>/dev/null || echo "?")
+            git commit -m "🤖 Job search $(date -u +%Y-%m-%d): ${COUNT} new jobs"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
