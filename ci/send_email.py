@@ -8,13 +8,12 @@ Required env vars (set as GitHub Secrets):
 """
 from __future__ import annotations
 
-import email.policy
+import base64
 import os
 import smtplib
 import sqlite3
 import sys
 from datetime import date
-from email.message import EmailMessage
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -232,22 +231,37 @@ def send_digest(today: str = None) -> None:
         print("No jobs found today — skipping email.")
         return
 
-    msg = EmailMessage(policy=email.policy.SMTP)
-    msg["Subject"] = f"[JobAgent] {len(jobs)} Jobs Found - {today}"
-    msg["From"]    = gmail_user
-    msg["To"]      = to_email
+    # Base64-encode both parts — output is pure ASCII regardless of job title content
+    plain_b64 = base64.b64encode(_build_plain(jobs, today).encode("utf-8")).decode("ascii")
+    html_b64  = base64.b64encode(_build_html(jobs, today).encode("utf-8")).decode("ascii")
 
-    # Sanitize to ASCII — plain text drops non-ASCII, HTML converts to entities
-    plain = _build_plain(jobs, today).encode("ascii", "ignore").decode("ascii")
-    html  = _build_html(jobs, today).encode("ascii", "xmlcharrefreplace").decode("ascii")
-
-    msg.set_content(plain)
-    msg.add_alternative(html, subtype="html")
+    boundary = "boundary_jobagent_42"
+    raw = "\r\n".join([
+        f"From: {gmail_user}",
+        f"To: {to_email}",
+        f"Subject: [JobAgent] {len(jobs)} Jobs Found - {today}",
+        "MIME-Version: 1.0",
+        f'Content-Type: multipart/alternative; boundary="{boundary}"',
+        "",
+        f"--{boundary}",
+        "Content-Type: text/plain; charset=utf-8",
+        "Content-Transfer-Encoding: base64",
+        "",
+        plain_b64,
+        "",
+        f"--{boundary}",
+        "Content-Type: text/html; charset=utf-8",
+        "Content-Transfer-Encoding: base64",
+        "",
+        html_b64,
+        "",
+        f"--{boundary}--",
+    ])
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(gmail_user, app_pass)
-            smtp.send_message(msg)
+            smtp.sendmail(gmail_user, [to_email], raw.encode("ascii"))
         print(f"Email sent to {to_email} - {len(jobs)} jobs listed.")
     except Exception as e:
         print(f"Email failed: {e}")
