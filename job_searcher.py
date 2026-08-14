@@ -24,7 +24,7 @@ from config import (
     GEMINI_API_KEY, GEMINI_BASE_URL, RELEVANCE_SCORE_MODEL,
     MAX_JOBS_PER_RUN, JOB_TYPES
 )
-from database import upsert_job, update_job_score, get_jobs_for_scoring
+from supabase_db import upsert_job, update_job_score, get_jobs_for_scoring
 
 logger = logging.getLogger(__name__)
 _client: OpenAI | None = None
@@ -738,8 +738,8 @@ def _score_batch(jobs_batch: list[dict], profile: dict) -> list[dict]:
     return data.get("results", data) if isinstance(data, dict) else data
 
 
-def score_jobs(profile: dict, today: str) -> int:
-    jobs = get_jobs_for_scoring(today)
+def score_jobs(profile: dict, today: str, user_id: str) -> int:
+    jobs = get_jobs_for_scoring(user_id, today)
     if not jobs:
         return 0
     scored = 0
@@ -748,12 +748,12 @@ def score_jobs(profile: dict, today: str) -> int:
         try:
             results = _score_batch(batch, profile)
             for r in results:
-                update_job_score(r["job_id"], r["score"], r.get("reason", ""))
+                update_job_score(user_id, r["job_id"], r["score"], r.get("reason", ""))
                 scored += 1
         except Exception as e:
             logger.error("Scoring batch %d failed: %s", i // 5, e)
             for j in batch:
-                update_job_score(j["job_id"], 0.0, "scoring_error")
+                update_job_score(user_id, j["job_id"], 0.0, "scoring_error")
     return scored
 
 
@@ -791,7 +791,7 @@ async def _gather_jobs(keywords: list[str]) -> list[dict]:
     return all_jobs
 
 
-def search_and_store_jobs(profile: dict, max_jobs: int = MAX_JOBS_PER_RUN) -> int:
+def search_and_store_jobs(profile: dict, user_id: str, max_jobs: int = MAX_JOBS_PER_RUN) -> int:
     keywords = (
         profile.get("job_titles", [])[:3]
         + profile.get("keywords", [])[:2]
@@ -804,7 +804,7 @@ def search_and_store_jobs(profile: dict, max_jobs: int = MAX_JOBS_PER_RUN) -> in
 
     new_count = 0
     for job in all_jobs:
-        if upsert_job(job):
+        if upsert_job(user_id, job):
             new_count += 1
 
     logger.info("Stored %d new jobs (from %d found)", new_count, len(all_jobs))

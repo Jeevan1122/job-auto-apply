@@ -625,10 +625,10 @@ with tab_run:
                 from job_searcher import search_and_store_jobs, score_jobs
                 status.info("Searching LinkedIn, Indeed, Greenhouse, Glassdoor, Dice, Monster…")
                 prog.progress(30)
-                n = search_and_store_jobs(p)
+                n = search_and_store_jobs(p, user_id=UID)
                 status.info(f"Found **{n}** new jobs — scoring with AI…")
                 prog.progress(70)
-                s = score_jobs(p, TODAY)
+                s = score_jobs(p, TODAY, user_id=UID)
                 prog.progress(100)
                 status.success(
                     f"Done! Found **{n}** new jobs, scored **{s}**. "

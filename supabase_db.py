@@ -133,6 +133,26 @@ def upsert_daily_summary(user_id: str, today: str, jobs_found: int, jobs_applied
     }, on_conflict="user_id,date").execute()
 
 
+def get_jobs_for_scoring(user_id: str, today: str) -> list[dict]:
+    db = get_admin_supabase()
+    res = db.table("jobs") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .eq("date", today) \
+            .eq("relevance_score", 0) \
+            .execute()
+    return res.data or []
+
+
+def update_job_score(user_id: str, job_id: str, score: float, reason: str):
+    db = get_admin_supabase()
+    db.table("jobs") \
+      .update({"relevance_score": score, "score_reason": reason}) \
+      .eq("job_id", job_id) \
+      .eq("user_id", user_id) \
+      .execute()
+
+
 def upsert_job(user_id: str, job: dict) -> bool:
     """Insert job for this user. Returns True if new, False if duplicate."""
     db = get_admin_supabase()
