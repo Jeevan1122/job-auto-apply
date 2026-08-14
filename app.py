@@ -38,6 +38,7 @@ from supabase_db import (
     get_all_resume_profiles, get_all_jobs, get_today_stats,
     get_all_daily_summaries, update_job_status,
     set_primary_resume, delete_resume_profile,
+    get_user_settings, save_user_settings,
 )
 from resume_parser import parse_resume
 from auth import show_auth_page, get_user, logout
@@ -1043,128 +1044,91 @@ with tab_excel:
 # TAB 6 — Settings
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_settings:
-    page_header("⚙️", "Settings", "Configure job search preferences, contact info, and scheduler.")
+    page_header("⚙️", "Settings", "Your personal job search preferences — saved to your account.")
 
-    env_path    = Path(__file__).parent / ".env"
-    env_content = env_path.read_text() if env_path.exists() else ""
+    s = get_user_settings(UID)
 
     with st.form("settings_form"):
-        section_header("Search &amp; Apply Settings")
+        section_header("Contact Info")
         c1, c2 = st.columns(2)
         with c1:
-            new_min   = st.slider("Min Relevance Score to Apply",
-                                  0.0, 1.0, float(os.getenv("MIN_RELEVANCE_SCORE","0.65")), 0.05)
-            new_max   = st.number_input("Max Jobs Per Run", 10, 500,
-                                        int(os.getenv("MAX_JOBS_PER_RUN","50")), 10)
+            new_name  = st.text_input("Full Name",  value=s.get("full_name", ""))
+            new_phone = st.text_input("Phone Number", value=s.get("phone", ""))
         with c2:
-            new_hour  = st.number_input("Auto-run Hour (0–23 ET)", 0, 23,
-                                        int(os.getenv("DAILY_RUN_HOUR","9")))
-            new_types = st.multiselect("Job Types",
-                                       ["fulltime","contract","remote"], default=JOB_TYPES)
+            new_li  = st.text_input("LinkedIn URL", value=s.get("linkedin_url", ""))
+            new_web = st.text_input("Portfolio / Website", value=s.get("website", ""))
 
-        section_header("Your Contact Info")
+        section_header("Job Preferences")
         c3, c4 = st.columns(2)
         with c3:
-            new_name  = st.text_input("Full Name",
-                                      value=os.getenv("CANDIDATE_NAME",""))
-            new_phone = st.text_input("Phone Number",
-                                      value=os.getenv("CANDIDATE_PHONE",""))
-            new_li    = st.text_input("LinkedIn URL",
-                                      value=os.getenv("CANDIDATE_LINKEDIN",""))
+            new_types = st.multiselect(
+                "Job Types",
+                ["fulltime", "contract", "remote"],
+                default=s.get("job_types") or ["fulltime", "contract", "remote"],
+            )
+            new_location = st.selectbox(
+                "Location Preference",
+                ["remote", "hybrid", "onsite", "any"],
+                index=["remote","hybrid","onsite","any"].index(
+                    s.get("location_preference", "remote")
+                ),
+            )
+            new_min_score = st.slider(
+                "Min Match Score to Show",
+                0.0, 1.0,
+                float(s.get("min_relevance_score", 0.65)), 0.05,
+            )
         with c4:
-            new_web   = st.text_input("Personal Website / Portfolio",
-                                      value=os.getenv("CANDIDATE_WEBSITE",""))
-            new_head  = st.selectbox("Run Browser",
-                                     ["Headless (background)", "Visible (debug)"],
-                                     index=0 if os.getenv("HEADLESS","true")=="true" else 1)
+            new_sal_min = st.number_input(
+                "Salary Min ($)", 0, 1000000,
+                int(s.get("salary_min", 0)), 5000,
+            )
+            new_sal_max = st.number_input(
+                "Salary Max ($)", 0, 1000000,
+                int(s.get("salary_max", 200000)), 5000,
+            )
+            new_notice = st.text_input(
+                "Notice Period / Can Start In",
+                value=s.get("notice_period", "2 weeks"),
+            )
 
-        section_header("Screening Question Defaults (answered by AI)")
-        c_s1, c_s2 = st.columns(2)
-        with c_s1:
+        section_header("Work Authorization")
+        c5, c6 = st.columns(2)
+        with c5:
             new_work_auth = st.selectbox(
                 "Authorized to work in the US?",
                 ["yes", "no"],
-                index=0 if os.getenv("WORK_AUTHORIZED","yes") == "yes" else 1,
+                index=0 if s.get("work_authorized", True) else 1,
             )
+        with c6:
             new_sponsorship = st.selectbox(
                 "Require visa sponsorship?",
                 ["no", "yes"],
-                index=0 if os.getenv("REQUIRES_SPONSORSHIP","no") == "no" else 1,
+                index=1 if s.get("requires_sponsorship", False) else 0,
             )
             new_relocate = st.selectbox(
                 "Willing to relocate?",
                 ["no", "yes"],
-                index=0 if os.getenv("WILLING_TO_RELOCATE","no") == "no" else 1,
-            )
-        with c_s2:
-            new_sal_min = st.number_input(
-                "Salary Expectation — Min ($)", 0, 500000,
-                int(os.getenv("SALARY_MIN","100000")), 5000,
-            )
-            new_sal_max = st.number_input(
-                "Salary Expectation — Max ($)", 0, 500000,
-                int(os.getenv("SALARY_MAX","150000")), 5000,
-            )
-            new_notice = st.text_input(
-                "Notice Period / Can Start In",
-                value=os.getenv("NOTICE_PERIOD","2 weeks"),
+                index=1 if s.get("willing_to_relocate", False) else 0,
             )
 
-        section_header("LinkedIn Credentials")
-        c5, c6 = st.columns(2)
-        with c5:
-            new_li_email = st.text_input("LinkedIn Email",
-                                         value=os.getenv("LINKEDIN_EMAIL",""),
-                                         type="default")
-        with c6:
-            new_li_pass  = st.text_input("LinkedIn Password",
-                                         value=os.getenv("LINKEDIN_PASSWORD",""),
-                                         type="password")
-
-        saved = st.form_submit_button("💾 Save Settings", type="primary")
+        saved = st.form_submit_button("💾 Save Settings", type="primary",
+                                      use_container_width=True)
 
     if saved:
-        updates = {
-            "MIN_RELEVANCE_SCORE":   str(new_min),
-            "MAX_JOBS_PER_RUN":      str(new_max),
-            "DAILY_RUN_HOUR":        str(new_hour),
-            "JOB_TYPES":             ",".join(new_types),
-            "CANDIDATE_NAME":        new_name,
-            "CANDIDATE_PHONE":       new_phone,
-            "CANDIDATE_LINKEDIN":    new_li,
-            "CANDIDATE_WEBSITE":     new_web,
-            "HEADLESS":              "true" if "Headless" in new_head else "false",
-            "WORK_AUTHORIZED":       new_work_auth,
-            "REQUIRES_SPONSORSHIP":  new_sponsorship,
-            "WILLING_TO_RELOCATE":   new_relocate,
-            "SALARY_MIN":            str(new_sal_min),
-            "SALARY_MAX":            str(new_sal_max),
-            "NOTICE_PERIOD":         new_notice,
-            "LINKEDIN_EMAIL":        new_li_email,
-            "LINKEDIN_PASSWORD":     new_li_pass,
-        }
-        lines = env_content.splitlines()
-        written: set[str] = set()
-        new_lines = []
-        for line in lines:
-            if "=" in line and not line.strip().startswith("#"):
-                key = line.split("=")[0].strip()
-                if key in updates:
-                    new_lines.append(f"{key}={updates[key]}")
-                    written.add(key)
-                    continue
-            new_lines.append(line)
-        for k, v in updates.items():
-            if k not in written:
-                new_lines.append(f"{k}={v}")
-        env_path.write_text("\n".join(new_lines) + "\n")
-        st.success("Settings saved — restart the app for changes to take effect.")
-
-    st.divider()
-    section_header("Scheduler")
-    st.caption("Start this in a separate terminal — it runs the agent automatically every day:")
-    st.code("python scheduler.py", language="bash")
-
-    section_header("Manual Run (Terminal)")
-    st.code("python daily_runner.py --run-now", language="bash")
-    st.code("python daily_runner.py --run-now --skip-apply", language="bash")
+        save_user_settings(UID, {
+            "full_name":            new_name,
+            "phone":                new_phone,
+            "linkedin_url":         new_li,
+            "website":              new_web,
+            "job_types":            new_types,
+            "location_preference":  new_location,
+            "min_relevance_score":  new_min_score,
+            "salary_min":           new_sal_min,
+            "salary_max":           new_sal_max,
+            "notice_period":        new_notice,
+            "work_authorized":      new_work_auth == "yes",
+            "requires_sponsorship": new_sponsorship == "yes",
+            "willing_to_relocate":  new_relocate == "yes",
+        })
+        st.success("Settings saved!")

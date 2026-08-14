@@ -123,6 +123,20 @@ def get_all_daily_summaries(user_id: str) -> list[dict]:
     return res.data or []
 
 
+def get_user_settings(user_id: str) -> dict:
+    db = get_admin_supabase()
+    res = db.table("user_settings").select("*").eq("user_id", user_id).execute()
+    return res.data[0] if res.data else {}
+
+
+def save_user_settings(user_id: str, settings: dict):
+    db = get_admin_supabase()
+    db.table("user_settings").upsert(
+        {"user_id": user_id, **settings},
+        on_conflict="user_id",
+    ).execute()
+
+
 def upsert_daily_summary(user_id: str, today: str, jobs_found: int, jobs_applied: int):
     db = get_admin_supabase()
     db.table("daily_summary").upsert({
