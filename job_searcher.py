@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 """
-Job search from: LinkedIn, Indeed, Greenhouse, Glassdoor, Dice, Monster
+Job search from: LinkedIn, Indeed, Greenhouse, Glassdoor, Dice, Monster,
+                 ZipRecruiter, Lever, Wellfound, RemoteOK, WeWorkRemotely
 All free — no API keys required (except optional Adzuna/JSearch for extra volume).
 Filters: US only, fulltime + contract + remote, posted in last 24 hours.
 """
@@ -439,6 +440,239 @@ async def _search_monster(client: httpx.AsyncClient, keywords: list[str]) -> lis
     return jobs
 
 
+# ── 7. ZipRecruiter ───────────────────────────────────────────────────────────
+# Uses ZipRecruiter's public RSS feed — no key required
+
+async def _search_ziprecruiter(client: httpx.AsyncClient, keywords: list[str]) -> list[dict]:
+    jobs: list[dict] = []
+    for keyword in keywords[:3]:
+        try:
+            params = {"search": keyword, "location": "United States", "radius": "25"}
+            r = await client.get(
+                "https://www.ziprecruiter.com/jobs-search/rss",
+                params=params,
+                headers={**HEADERS, "Accept": "application/rss+xml, text/xml"},
+                timeout=TIMEOUT,
+            )
+            if r.status_code != 200:
+                continue
+            root = ET.fromstring(r.text)
+            ns = {"media": "http://search.yahoo.com/mrss/"}
+            for item in root.findall(".//item"):
+                title   = (item.findtext("title") or "").strip()
+                url     = (item.findtext("link") or "").strip()
+                company = (item.findtext("source") or "Unknown").strip()
+                desc    = _strip_html(item.findtext("description") or "")
+                if not url:
+                    continue
+                jobs.append({
+                    "job_id":      _job_id(url),
+                    "title":       title,
+                    "company":     company,
+                    "location":    "United States",
+                    "url":         url,
+                    "source":      "ZipRecruiter",
+                    "description": desc[:2000],
+                    "job_type":    "fulltime",
+                })
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning("ZipRecruiter '%s' error: %s", keyword, e)
+    return jobs
+
+
+# ── 8. Lever ──────────────────────────────────────────────────────────────────
+# Lever's public job board API — same pattern as Greenhouse, no key needed
+
+LEVER_COMPANIES = [
+    "netflix", "airbnb", "stripe", "figma", "notion", "airtable",
+    "brex", "plaid", "gusto", "rippling", "lattice", "scale-ai",
+    "databricks", "confluent", "hashicorp", "segment", "retool",
+    "vercel", "linear", "loom", "mercury", "ramp", "anduril",
+]
+
+async def _search_lever(client: httpx.AsyncClient, keywords: list[str]) -> list[dict]:
+    jobs: list[dict] = []
+    kw_lower = [k.lower() for k in keywords]
+
+    async def _fetch_company(company: str):
+        try:
+            r = await client.get(
+                f"https://api.lever.co/v0/postings/{company}?mode=json",
+                timeout=TIMEOUT,
+            )
+            if r.status_code != 200:
+                return
+            for posting in r.json():
+                title = posting.get("text", "")
+                if not any(k in title.lower() for k in kw_lower):
+                    continue
+                url = posting.get("hostedUrl", "")
+                if not url:
+                    continue
+                loc = posting.get("categories", {}).get("location", "Remote")
+                desc = _strip_html(posting.get("descriptionPlain", ""))
+                jobs.append({
+                    "job_id":      _job_id(url),
+                    "title":       title,
+                    "company":     company.replace("-", " ").title(),
+                    "location":    loc,
+                    "url":         url,
+                    "source":      "Lever",
+                    "description": desc[:2000],
+                    "job_type":    "fulltime",
+                })
+        except Exception as e:
+            logger.debug("Lever %s: %s", company, e)
+
+    await asyncio.gather(*[_fetch_company(c) for c in LEVER_COMPANIES])
+    return jobs
+
+
+# ── 9. Wellfound (AngelList) ──────────────────────────────────────────────────
+# Wellfound public job search — great for startup roles, no key needed
+
+async def _search_wellfound(client: httpx.AsyncClient, keywords: list[str]) -> list[dict]:
+    jobs: list[dict] = []
+    for keyword in keywords[:3]:
+        try:
+            r = await client.get(
+                "https://wellfound.com/jobs",
+                params={"q": keyword, "remote": "true"},
+                headers={**HEADERS, "Accept": "text/html,application/xhtml+xml"},
+                timeout=TIMEOUT,
+            )
+            if r.status_code != 200:
+                continue
+            # Extract JSON-LD structured data
+            ld_blocks = re.findall(
+                r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+                r.text, re.DOTALL
+            )
+            for block in ld_blocks:
+                try:
+                    data = json.loads(block)
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        if item.get("@type") != "JobPosting":
+                            continue
+                        url = item.get("url", "")
+                        if not url:
+                            continue
+                        org = item.get("hiringOrganization", {})
+                        jobs.append({
+                            "job_id":      _job_id(url),
+                            "title":       item.get("title", ""),
+                            "company":     org.get("name", "Unknown") if isinstance(org, dict) else "Unknown",
+                            "location":    "Remote",
+                            "url":         url,
+                            "source":      "Wellfound",
+                            "description": _strip_html(item.get("description", ""))[:2000],
+                            "job_type":    "remote",
+                        })
+                except Exception:
+                    pass
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning("Wellfound '%s' error: %s", keyword, e)
+    return jobs
+
+
+# ── 10. RemoteOK ──────────────────────────────────────────────────────────────
+# RemoteOK public JSON API — completely free, no key needed
+
+async def _search_remoteok(client: httpx.AsyncClient, keywords: list[str]) -> list[dict]:
+    jobs: list[dict] = []
+    kw_lower = [k.lower() for k in keywords]
+    try:
+        r = await client.get(
+            "https://remoteok.com/api",
+            headers={**HEADERS, "Accept": "application/json"},
+            timeout=TIMEOUT,
+        )
+        if r.status_code != 200:
+            return jobs
+        data = r.json()
+        for item in data:
+            if not isinstance(item, dict) or not item.get("position"):
+                continue
+            title = item.get("position", "")
+            if not any(k in title.lower() for k in kw_lower):
+                # also check tags
+                tags = " ".join(item.get("tags", [])).lower()
+                if not any(k in tags for k in kw_lower):
+                    continue
+            url = item.get("url", "")
+            if not url:
+                url = f"https://remoteok.com/remote-jobs/{item.get('id', '')}"
+            jobs.append({
+                "job_id":      _job_id(url),
+                "title":       title,
+                "company":     item.get("company", "Unknown"),
+                "location":    "Remote",
+                "url":         url,
+                "source":      "RemoteOK",
+                "description": _strip_html(item.get("description", ""))[:2000],
+                "job_type":    "remote",
+            })
+    except Exception as e:
+        logger.warning("RemoteOK error: %s", e)
+    return jobs
+
+
+# ── 11. We Work Remotely ──────────────────────────────────────────────────────
+# We Work Remotely RSS feed — free, no key needed
+
+WWR_FEEDS = [
+    "https://weworkremotely.com/remote-jobs.rss",
+    "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+    "https://weworkremotely.com/categories/remote-data-science-jobs.rss",
+    "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+]
+
+async def _search_weworkremotely(client: httpx.AsyncClient, keywords: list[str]) -> list[dict]:
+    jobs: list[dict] = []
+    kw_lower = [k.lower() for k in keywords]
+
+    async def _fetch_feed(feed_url: str):
+        try:
+            r = await client.get(
+                feed_url,
+                headers={**HEADERS, "Accept": "application/rss+xml, text/xml"},
+                timeout=TIMEOUT,
+            )
+            if r.status_code != 200:
+                return
+            root = ET.fromstring(r.text)
+            for item in root.findall(".//item"):
+                title = (item.findtext("title") or "").strip()
+                if not any(k in title.lower() for k in kw_lower):
+                    continue
+                url = (item.findtext("link") or "").strip()
+                if not url:
+                    continue
+                # title format: "Company: Job Title"
+                parts = title.split(":", 1)
+                company = parts[0].strip() if len(parts) > 1 else "Unknown"
+                job_title = parts[1].strip() if len(parts) > 1 else title
+                desc = _strip_html(item.findtext("description") or "")
+                jobs.append({
+                    "job_id":      _job_id(url),
+                    "title":       job_title,
+                    "company":     company,
+                    "location":    "Remote",
+                    "url":         url,
+                    "source":      "WeWorkRemotely",
+                    "description": desc[:2000],
+                    "job_type":    "remote",
+                })
+        except Exception as e:
+            logger.debug("WWR feed %s: %s", feed_url, e)
+
+    await asyncio.gather(*[_fetch_feed(f) for f in WWR_FEEDS])
+    return jobs
+
+
 # ── Dedup & filter ─────────────────────────────────────────────────────────────
 
 def _deduplicate(jobs: list[dict]) -> list[dict]:
@@ -534,6 +768,11 @@ async def _gather_jobs(keywords: list[str]) -> list[dict]:
             _search_glassdoor(client, keywords),
             _search_dice(client, keywords),
             _search_monster(client, keywords),
+            _search_ziprecruiter(client, keywords),
+            _search_lever(client, keywords),
+            _search_wellfound(client, keywords),
+            _search_remoteok(client, keywords),
+            _search_weworkremotely(client, keywords),
             return_exceptions=True,
         )
 
