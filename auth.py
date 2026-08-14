@@ -104,12 +104,12 @@ def show_auth_page():
 
     # ── Login ──────────────────────────────────────────────────────────────────
     with tab_login:
-        email    = st.text_input("Email", key="login_email",
-                                  placeholder="you@example.com")
-        password = st.text_input("Password", key="login_pass", type="password",
-                                  placeholder="••••••••")
-
-        if st.button("Login", use_container_width=True, type="primary", key="btn_login"):
+        with st.form("form_login"):
+            email    = st.text_input("Email", placeholder="you@example.com")
+            password = st.text_input("Password", type="password", placeholder="••••••••")
+            submitted = st.form_submit_button("Login", use_container_width=True,
+                                              type="primary")
+        if submitted:
             if not email or not password:
                 st.error("Please enter your email and password.")
             else:
@@ -128,16 +128,16 @@ def show_auth_page():
 
     # ── Sign Up ────────────────────────────────────────────────────────────────
     with tab_signup:
-        new_email = st.text_input("Email", key="signup_email",
-                                   placeholder="you@example.com")
-        new_pass  = st.text_input("Password", key="signup_pass", type="password",
-                                   placeholder="Min 6 characters")
-        new_pass2 = st.text_input("Confirm Password", key="signup_pass2",
-                                   type="password", placeholder="Repeat password")
-
-        if st.button("Create Account", use_container_width=True, type="primary",
-                     key="btn_signup"):
-            if not new_email or not new_pass:
+        with st.form("form_signup"):
+            new_email = st.text_input("Email", placeholder="you@example.com")
+            new_pass  = st.text_input("Password", type="password",
+                                      placeholder="Min 6 characters")
+            new_pass2 = st.text_input("Confirm Password", type="password",
+                                      placeholder="Repeat password")
+            submitted = st.form_submit_button("Create Account", use_container_width=True,
+                                              type="primary")
+        if submitted:
+            if not new_email or not new_pass or not new_pass2:
                 st.error("Please fill in all fields.")
             elif new_pass != new_pass2:
                 st.error("Passwords do not match.")
