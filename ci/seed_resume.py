@@ -28,9 +28,9 @@ def main():
 
     init_db()
 
-    # Only seed if no profile exists yet (don't overwrite manual DB updates)
+    # If profile already exists with same filename, skip to avoid duplicates
     existing = get_latest_resume_profile()
-    if existing:
+    if existing and existing.get("filename") == data.get("filename", "resume.pdf"):
         print(f"Resume profile already in DB: {existing['filename']} — skipping seed.")
         return
 
