@@ -11,7 +11,14 @@ from pathlib import Path
 
 import streamlit as st
 
-# Inject Streamlit Cloud secrets into env vars before any other imports read them
+st.set_page_config(
+    page_title="JobAgent — AI Job Search",
+    page_icon="💼",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Inject Streamlit Cloud secrets into env vars (must be after set_page_config)
 try:
     for _k, _v in st.secrets.items():
         os.environ.setdefault(_k, str(_v))
@@ -25,21 +32,20 @@ from config import (
     MAX_JOBS_PER_RUN, JOB_TYPES,
     DAILY_RUN_HOUR, DAILY_RUN_MINUTE,
 )
-from database import (
-    init_db, save_resume_profile, get_latest_resume_profile,
+from database import init_db
+from supabase_db import (
+    save_resume_profile, get_latest_resume_profile,
     get_all_resume_profiles, get_all_jobs, get_today_stats,
     get_all_daily_summaries, update_job_status,
-    mark_manually_applied, unmark_manually_applied, get_manually_applied_jobs,
-    set_primary_resume, delete_resume_profile, reset_today_statuses,
+    set_primary_resume, delete_resume_profile,
 )
 from resume_parser import parse_resume
+from auth import show_auth_page, get_user, logout
 
-st.set_page_config(
-    page_title="JobAgent — AI Job Search",
-    page_icon="💼",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# ── Auth gate — show login page if not logged in ───────────────────────────────
+show_auth_page()
+current_user = get_user()
+UID = current_user["id"]
 
 init_db()
 TODAY = date.today().isoformat()
@@ -375,9 +381,19 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # Logged-in user info + logout
+    if current_user:
+        st.markdown(
+            f'<div style="text-align:center; font-size:0.75rem; color:#64748B; padding-bottom:4px;">'
+            f'{current_user["email"]}</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Logout", use_container_width=True, key="sidebar_logout"):
+            logout()
+
     st.divider()
 
-    profile = get_latest_resume_profile()
+    profile = get_latest_resume_profile(UID)
     if profile:
         p = profile["parsed_profile"]
         st.markdown(f"""
@@ -397,7 +413,7 @@ with st.sidebar:
 
     st.divider()
 
-    stats   = get_today_stats(TODAY)
+    stats   = get_today_stats(UID, TODAY)
     total   = stats.get("total",   0) or 0
     applied = stats.get("applied", 0) or 0
     pending = max(total - applied, 0)
@@ -417,7 +433,6 @@ with st.sidebar:
 
     st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
     if st.button("🔄 Reset Today's Stats", use_container_width=True):
-        reset_today_statuses(TODAY)
         st.rerun()
 
     st.divider()
@@ -447,7 +462,7 @@ with tab_resume:
     page_header("📄", "Resume", "The agent uses the ⭐ Primary resume to search jobs and score relevance.")
 
     # ── Upload ─────────────────────────────────────────────────────────────────
-    with st.expander("Upload a new resume", expanded=not bool(get_all_resume_profiles())):
+    with st.expander("Upload a new resume", expanded=not bool(get_all_resume_profiles(UID))):
         uploaded = st.file_uploader("Drop PDF or DOCX", type=["pdf", "docx"])
         if uploaded:
             if st.button("Parse & Save Resume", type="primary", use_container_width=True):
@@ -456,11 +471,11 @@ with tab_resume:
                         file_bytes = uploaded.read()
                         raw_text, parsed = parse_resume(uploaded.name, file_bytes)
                         (Path(UPLOADS_DIR) / uploaded.name).write_bytes(file_bytes)
-                        new_id = save_resume_profile(uploaded.name, raw_text, parsed)
+                        new_id = save_resume_profile(UID, uploaded.name, raw_text, parsed)
 
                         # Auto-set as primary if it's the only one
-                        if len(get_all_resume_profiles()) == 1:
-                            set_primary_resume(new_id)
+                        if len(get_all_resume_profiles(UID)) == 1:
+                            set_primary_resume(UID, new_id)
 
                         st.success("Resume saved and parsed!")
                         c1, c2, c3 = st.columns(3)
@@ -487,7 +502,7 @@ with tab_resume:
     st.divider()
 
     # ── Saved resumes ──────────────────────────────────────────────────────────
-    profiles = get_all_resume_profiles()
+    profiles = get_all_resume_profiles(UID)
     if not profiles:
         st.info("No resumes yet — upload one above.")
     else:
@@ -520,7 +535,7 @@ with tab_resume:
                             use_container_width=True,
                             help="Agent will use this resume for all future searches",
                         ):
-                            set_primary_resume(p["id"])
+                            set_primary_resume(UID, p["id"])
                             st.rerun()
 
                 with col_dl:
@@ -547,7 +562,7 @@ with tab_resume:
                         st.warning("Delete?")
                         cc1, cc2 = st.columns(2)
                         if cc1.button("Yes", key=f"yes_{p['id']}", use_container_width=True, type="primary"):
-                            delete_resume_profile(p["id"])
+                            delete_resume_profile(UID, p["id"])
                             if file_path.exists():
                                 file_path.unlink()
                             st.session_state.confirm_delete = None
@@ -565,7 +580,7 @@ with tab_resume:
                             st.rerun()
 
         # ── Active resume preview ──────────────────────────────────────────────
-        active = get_latest_resume_profile()
+        active = get_latest_resume_profile(UID)
         if active:
             st.divider()
             section_header("Active Resume Details")
@@ -593,7 +608,7 @@ with tab_resume:
 with tab_run:
     page_header("🔍", "Search Jobs", "The agent runs automatically every day at 6:00 AM — or trigger a manual search anytime.")
 
-    profile = get_latest_resume_profile()
+    profile = get_latest_resume_profile(UID)
     if not profile:
         st.error("Upload your resume first (Resume tab).")
     else:
@@ -639,8 +654,7 @@ with tab_run:
 with tab_today:
     page_header("📋", f"Today's Jobs — {TODAY}", "Review jobs found today. Tick Applied?, enter the resume filename, and click Save Changes.")
 
-    all_jobs   = get_all_jobs(limit=2000)
-    today_jobs = [j for j in all_jobs if j.get("date") == TODAY]
+    today_jobs = get_all_jobs(UID, TODAY)
 
     if not today_jobs:
         st.info("No jobs yet — go to **Search Jobs** tab and run a search.")
@@ -770,9 +784,9 @@ with tab_today:
                         with fc3:
                             if st.form_submit_button("💾 Save", use_container_width=True):
                                 if new_applied:
-                                    mark_manually_applied(jid, new_resume)
+                                    update_job_status(UID, jid, "applied")
                                 else:
-                                    unmark_manually_applied(jid)
+                                    update_job_status(UID, jid, "new")
                                 st.rerun()
 
             # CSV download
@@ -803,7 +817,7 @@ with tab_today:
 with tab_all:
     page_header("✅", "My Applications", "All positions you have manually applied to — company, role, link, and resume filename.")
 
-    applied_jobs = get_manually_applied_jobs()
+    applied_jobs = [j for j in get_all_jobs(UID) if j.get("status") == "applied"]
 
     if not applied_jobs:
         st.info(
@@ -883,7 +897,7 @@ with tab_all:
             if st.button("💾 Update Resume Filenames", use_container_width=True):
                 for i, row in edited_apps.iterrows():
                     job_id = df.iloc[i]["_job_id"]
-                    mark_manually_applied(job_id, row["Resume Saved As"])
+                    update_job_status(UID, job_id, "applied")
                 st.success("Updated!")
                 st.rerun()
         with col_dl:

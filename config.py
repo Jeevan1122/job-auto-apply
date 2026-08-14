@@ -5,18 +5,19 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL         = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY         = os.getenv("SUPABASE_KEY", "")          # anon key (auth)
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")  # service role (data)
 
 # ── AI (Gemini — free tier) ───────────────────────────────────────────────────
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 # ── AI models ─────────────────────────────────────────────────────────────────
-RESUME_PARSE_MODEL    = "gemini-2.0-flash"
-RELEVANCE_SCORE_MODEL = "gemini-2.0-flash"
-COVER_LETTER_MODEL    = "gemini-2.0-flash"
-TAILOR_MODEL          = "gemini-2.0-flash"
+RESUME_PARSE_MODEL    = "gemini-2.5-flash"
+RELEVANCE_SCORE_MODEL = "gemini-2.5-flash"
+COVER_LETTER_MODEL    = "gemini-2.5-flash"
+TAILOR_MODEL          = "gemini-2.5-flash"
 
 # ── Optional job board APIs (leave blank if unused) ──────────────────────────
 ADZUNA_APP_ID   = os.getenv("ADZUNA_APP_ID", "")
