@@ -18,11 +18,8 @@ from database import (
 from job_searcher import search_and_store_jobs, score_jobs
 from excel_reporter import export_excel
 from pdf_reporter import export_pdf
-try:
-    from sheets_updater import sync_to_sheets
-except ImportError:
-    def sync_to_sheets():
-        return False
+def sync_to_sheets():
+    return False
 from config import MAX_JOBS_PER_RUN
 
 logging.basicConfig(
