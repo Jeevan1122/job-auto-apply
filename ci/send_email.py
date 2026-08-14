@@ -13,8 +13,7 @@ import smtplib
 import sqlite3
 import sys
 from datetime import date
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.message import EmailMessage
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -191,12 +190,12 @@ def _build_html(jobs: list[dict], today: str) -> str:
 
 
 def _build_plain(jobs: list[dict], today: str) -> str:
-    lines = [f"JobAgent Daily Digest — {today}", "=" * 50, ""]
+    lines = [f"JobAgent Daily Digest - {today}", "=" * 50, ""]
     for j in jobs:
         score = int((j.get("relevance_score") or 0) * 100)
-        lines.append(f"[{score}%] {j.get('title','?')} @ {j.get('company','?')}")
-        lines.append(f"      {j.get('location','')}")
-        lines.append(f"      {j.get('url','')}")
+        lines.append(f"[{score}%] {_clean(j.get('title','?'))} @ {_clean(j.get('company','?'))}")
+        lines.append(f"      {_clean(j.get('location',''))}")
+        lines.append(f"      {_clean(j.get('url',''))}")
         lines.append("")
     return "\n".join(lines)
 
@@ -219,19 +218,19 @@ def send_digest(today: str = None) -> None:
         print("No jobs found today — skipping email.")
         return
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"💼 {len(jobs)} Jobs Found — {today}"
-    msg["From"]    = f"JobAgent <{gmail_user}>"
+    msg = EmailMessage()
+    msg["Subject"] = f"[JobAgent] {len(jobs)} Jobs Found - {today}"
+    msg["From"]    = gmail_user
     msg["To"]      = to_email
 
-    msg.attach(MIMEText(_build_plain(jobs, today), "plain", "utf-8"))
-    msg.attach(MIMEText(_build_html(jobs, today),  "html",  "utf-8"))
+    msg.set_content(_build_plain(jobs, today))
+    msg.add_alternative(_build_html(jobs, today), subtype="html")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(gmail_user, app_pass)
             smtp.send_message(msg)
-        print(f"Email sent to {to_email} — {len(jobs)} jobs listed.")
+        print(f"Email sent to {to_email} - {len(jobs)} jobs listed.")
     except Exception as e:
         print(f"Email failed: {e}")
         sys.exit(1)
